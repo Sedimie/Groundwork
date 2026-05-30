@@ -74,4 +74,74 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for how guides are structured and what 
 
 ---
 
+## What We Use
+
+- **Velite** — Content pipeline that processes MDX files into type-safe JSON at build time
+- **Next.js 16** — App Router framework with static site generation
+- **Tailwind CSS v4** — Styling with CSS variables for theming
+- **Shiki** — Syntax highlighting (configured in velite.config.ts)
+
+---
+
+## Adding a Page
+
+Create a new MDX file in the appropriate folder under `content/`:
+
+```
+content/guides/your-guide.mdx
+content/blog/your-post.mdx
+content/reference/your-reference.mdx
+content/tutorials/your-tutorial.mdx
+```
+
+Each file requires frontmatter:
+
+```mdx
+---
+title: Your Page Title
+description: A brief description of what this covers
+date: 2026-05-31
+tags: ["tag1", "tag2"]
+slug: your-page-slug
+---
+Your markdown content here...
+```
+
+Then run `npm run dev` — Velite processes it automatically and the page appears at `/guides/your-guide-slug`.
+
+**Frontmatter schema per collection:**
+
+| Collection | Required Fields |
+|---|---|
+| `guides` | title, description, date, slug, content |
+| `blog` | title, description, date, slug, content |
+| `reference` | title, description, slug, content |
+| `tutorials` | title, description, date, slug, content |
+
+All collections support optional `tags` as an array of strings.
+
+---
+
+## Improving a Page
+
+1. Edit the MDX file directly in `content/`
+2. Run `npm run dev` to preview changes
+3. Commit your changes
+
+For style changes or custom components, edit the source files — not the generated output in `.velite/`.
+
+---
+
+## Deployment
+
+`.velite/` is gitignored — it's regenerated on build. Your build script should run:
+
+```bash
+npm run build
+```
+
+This executes Velite first, then Next.js. On Vercel, Netlify, or similar platforms, this runs automatically on deploy.
+
+---
+
 *Understanding first. Everything else follows.*
