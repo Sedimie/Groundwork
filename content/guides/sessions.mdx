@@ -1,0 +1,205 @@
+﻿
+---
+title: Understanding Sessions
+description: Understand how authenticated sessions work, how database-backed sessions maintain user state, and how sliding-window validation balances security and usability.
+date: 2026-11-16
+tags:
+  - sessions
+  - authentication
+  - security
+slug: sessions
+---
+
+## Why Sessions Exist
+
+HTTP is a stateless protocol. Each request is independent, meaning a server does not automatically remember who made an earlier request or whether that person has already authenticated.
+
+Consider signing in to an application. The server verifies your credentials and grants access to your dashboard. When you request another page, HTTP does not automatically carry the fact that you have already signed in.
+
+Without a mechanism for maintaining state, the application would need to authenticate you again with every request.
+
+A **session** solves this problem. It allows an application to maintain an authenticated relationship across multiple requests without repeatedly asking the user to prove their identity.
+
+Authentication establishes who a user is. Session management maintains the authenticated state that follows.
+
+## Understanding Sessions, Session IDs, and Cookies
+
+These three concepts are closely related, but they are not interchangeable.
+
+- **Session:** The authenticated state maintained by an application.
+- **Session identifier:** A unique, unpredictable value used to associate incoming requests with a particular session.
+- **Cookie:** A browser mechanism commonly used to store and send the session identifier with subsequent requests.
+
+Think of a library membership:
+
+- Your membership represents your relationship with the library.
+- Your membership number identifies that membership.
+- Presenting the card allows the library to retrieve your membership record.
+
+A browser works similarly. It sends a session identifier, and the application uses it to locate the corresponding session.
+
+The cookie is not the session itself. It is one way to transport the identifier between the browser and the server.
+
+A session identifier should not contain personal information or authorization privileges. It should be an opaque, unpredictable reference to server-side state.
+
+## The Session Lifecycle
+
+A typical authenticated session follows this sequence:
+
+1. **Authentication:** The user submits credentials, and the application verifies them.
+2. **Session creation:** After successful authentication, the application establishes an authenticated session.
+3. **Identifier delivery:** The server sends a session identifier to the browser, commonly through a cookie.
+4. **Subsequent requests:** The browser includes the applicable cookie with matching requests.
+5. **Session lookup:** The application uses the identifier to locate the corresponding session.
+6. **Validation:** The application checks whether the session exists, is still valid, and has not expired or been revoked.
+7. **Access decision:** If validation succeeds, the application associates the request with the authenticated user. Authorization rules still determine what that user may access.
+8. **Termination:** The session ends through logout, expiration, administrative revocation, or another security event.
+
+A successful login does not make authentication valid forever. Every subsequent request that relies on the session depends on its continued validity.
+
+## Database-Backed Sessions
+
+A session does not have to live in the browser. In a database-backed session model, the application stores session records in a persistent data store and uses a session identifier to locate them.
+
+A session record may contain:
+
+- A session identifier or a verifier derived from it.
+- The associated user.
+- The creation time.
+- The last qualifying activity.
+- The expiration time.
+- Revocation or validity information.
+
+When the browser sends its session identifier, the server looks up the corresponding record and checks its validity. If the record is valid, the application can identify the associated user and continue processing the request.
+
+### Why Store Sessions in a Database?
+
+**Persistence:** Session records can survive application restarts as long as the underlying database records remain available and valid.
+
+**Shared state:** Multiple application instances can consult the same session store. A user does not need to return to the same server for every request.
+
+**Revocation:** The application can invalidate a particular session without depending on the browser to discard its cookie.
+
+**Session visibility:** Stored records can support account-level session management, auditing, and administrative controls.
+
+### Protecting Stored Session Data
+
+Session records are sensitive because they are associated with authenticated access.
+
+One useful security approach is to store a one-way hash of a randomly generated session secret instead of storing the raw secret. When a request arrives, the application can derive the corresponding verifier and compare it with the stored value.
+
+This means that a read-only database disclosure does not automatically reveal usable session identifiers.
+
+However, hashing stored identifiers does not protect against every attack. A stolen browser cookie, a compromised application server, or unauthorized modification of session records can still put accounts at risk.
+
+## Sliding-Window Validation
+
+A session needs an expiration policy. Otherwise, an abandoned or stolen session could remain usable indefinitely.
+
+A fixed expiration gives a session a predetermined lifetime. A sliding-window policy behaves differently: qualifying activity can move the expiration forward, allowing an active user to remain authenticated.
+
+Imagine an application with a 30-minute inactivity window and a renewal threshold of 15 minutes.
+
+| Event | Time | Expiration |
+|---|---|---|
+| User logs in | 10:00 | 10:30 |
+| User makes a request | 10:10 | 10:30 |
+| Renewal threshold reached | 10:15 | 10:45 |
+| User makes another request | 10:20 | 10:45 |
+| Next renewal threshold reached | 10:30 | 11:00 |
+
+The important idea is that expiration can be extended relative to qualifying activity rather than remaining permanently tied to the original login time.
+
+### Why Not Renew on Every Request?
+
+Updating a database record on every request can create unnecessary writes, especially when an application receives many requests.
+
+An application can instead define a renewal threshold. It validates the session on incoming requests and renews the expiration only when the remaining lifetime reaches the configured threshold.
+
+This reduces unnecessary database updates while allowing active sessions to continue.
+
+The exact threshold and renewal policy are application decisions. Sliding-window validation does not require one universal interval.
+
+### Sliding Expiration vs. Absolute Expiration
+
+These policies solve different problems:
+
+- **Sliding expiration:** Qualifying activity can extend the session's expiration.
+- **Inactivity timeout:** A session expires after a specified period without qualifying activity.
+- **Absolute expiration:** A session has a maximum lifetime that activity cannot extend.
+
+For example, an application may use a 30-minute inactivity window alongside an 8-hour absolute lifetime.
+
+Even if the user remains active, the absolute lifetime eventually requires the session to end or the user to authenticate again.
+
+NIST SP 800-63B-4 distinguishes inactivity timeouts from overall session timeouts. Successful activity resets the inactivity timeout, while successful reauthentication resets both.
+
+Sliding expiration should not be confused with proof that the person using a session is still the legitimate account owner.
+
+## Session Security Threats
+
+A session identifier is effectively a bearer credential: someone possessing a valid identifier may be able to act as the authenticated user.
+
+This makes protecting session identifiers and validating session state essential.
+
+### Session Hijacking
+
+Session hijacking occurs when an attacker obtains a valid session identifier and uses it to impersonate the legitimate user.
+
+Possible causes include network interception, cross-site scripting, malware, compromised devices, or accidental exposure through URLs and logs.
+
+Using HTTPS, protecting session identifiers, setting appropriate cookie attributes, and revoking compromised sessions help reduce this risk.
+
+### Session Fixation
+
+Session fixation occurs when an attacker causes a victim to authenticate using a session identifier already known to the attacker.
+
+If the application continues using that same identifier after authentication, the attacker may be able to reuse it.
+
+A key defense is to issue a fresh session identifier after successful authentication and important privilege changes.
+
+### Cookie Security Attributes
+
+Browser cookies support attributes that help protect session identifiers:
+
+- **Secure:** Restricts cookie transmission to secure HTTPS connections.
+- **HttpOnly:** Prevents client-side scripts from reading the cookie through browser scripting APIs. It reduces some session-stealing risks but does not eliminate the consequences of cross-site scripting.
+- **SameSite:** Controls whether cookies are sent with cross-site requests and provides a layer of protection against cross-site request forgery (CSRF).
+
+These attributes address different risks. They complement secure session design rather than replacing server-side validation.
+
+### Session Revocation
+
+A session may need to become invalid before its expiration time.
+
+For example, a user may log out, change their password, lose a device, or report suspicious account activity.
+
+The application should be able to invalidate affected sessions so that previously issued identifiers no longer grant access.
+
+Deleting a cookie from the browser alone is insufficient. An attacker holding a copied identifier could still use it if the corresponding server-side session remains valid.
+
+## Design Considerations
+
+Session management involves balancing security, performance, availability, and usability.
+
+| Consideration | Why it matters |
+|---|---|
+| Database availability | Applications relying on database-backed sessions need access to the session store to validate requests. |
+| Database load | Frequent lookups and expiration updates can increase database traffic. |
+| Multiple application instances | Shared session storage helps maintain consistent authentication state across servers. |
+| Session revocation | Centralized records make it possible to invalidate sessions before their expiration. |
+| Session lifetime | Shorter lifetimes reduce exposure but may interrupt legitimate users. |
+| Renewal policy | Sliding expiration improves usability but should be considered alongside absolute timeouts. |
+
+There is no universally correct session lifetime or renewal threshold. The appropriate policy depends on the sensitivity of the application, its threat model, availability requirements, and expected user behavior.
+
+The goal is to maintain authenticated state without making sessions unnecessarily long-lived or difficult to revoke.
+
+## Further Reading
+
+- [NIST SP 800-63B-4: Session Management](https://pages.nist.gov/800-63-4/sp800-63b/session/) — Session secrets, inactivity timeouts, and overall session timeouts.
+- [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) — Session identifiers, lifecycle, threats, and security controls.
+- [RFC 6265: HTTP State Management Mechanism](https://www.rfc-editor.org/rfc/rfc6265) — The HTTP cookie mechanism.
+- [MDN: HTTP Cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies) — Browser cookie behavior and security attributes.
+
+now use it: sedim add auth
